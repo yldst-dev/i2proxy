@@ -5,7 +5,7 @@ iPhone의 iSH 앱에서 HTTP/SOCKS 프록시를 실행하고, macOS에서 해당
 ## 설치
 
 ```sh
-if [ -d i2proxy ]; then cd i2proxy; else git clone https://github.com/yldst-dev/i2proxy.git i2proxy && cd i2proxy; fi
+if [ -d i2proxy ]; then cd i2proxy; else command -v git >/dev/null 2>&1 || { apk update && apk add git; }; git clone https://github.com/yldst-dev/i2proxy.git i2proxy && cd i2proxy; fi
 ```
 
 ## 지원 범위

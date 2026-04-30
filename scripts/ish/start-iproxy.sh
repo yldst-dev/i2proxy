@@ -40,6 +40,30 @@ detect_external_iface() {
     fi
   fi
 
+  if [ -r /proc/net/route ]; then
+    found="$(awk '$2 == "00000000" { print $1; exit }' /proc/net/route 2>/dev/null || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  if command -v route >/dev/null 2>&1; then
+    found="$(route -n 2>/dev/null | awk '$1 == "0.0.0.0" { print $8; exit }' || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  if command -v ifconfig >/dev/null 2>&1; then
+    found="$(ifconfig 2>/dev/null | awk '/^[^[:space:]]/ { sub(":", "", $1); iface = $1 } /inet / && iface != "lo" && iface != "lo0" { print iface; exit }' || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
   printf '%s\n' 'eth0'
 }
 
@@ -146,8 +170,21 @@ require_packages
 stop_existing
 write_tinyproxy_config
 write_sockd_config
-tinyproxy -c "$TINYPROXY_CONFIG_PATH"
-sockd -D -f "$SOCKD_CONFIG_PATH" -p "$SOCKD_PID_PATH"
+if ! tinyproxy -c "$TINYPROXY_CONFIG_PATH"; then
+  printf '%s\n' 'tinyproxy 시작에 실패했습니다.' >&2
+  [ -f "$TINYPROXY_LOG_PATH" ] && tail -n 20 "$TINYPROXY_LOG_PATH" >&2
+  stop_existing
+  exit 1
+fi
+
+if ! sockd -D -f "$SOCKD_CONFIG_PATH" -p "$SOCKD_PID_PATH"; then
+  printf '%s\n' 'sockd 시작에 실패했습니다.' >&2
+  sockd -V -f "$SOCKD_CONFIG_PATH" >&2 || true
+  [ -f "$SOCKD_LOG_PATH" ] && tail -n 20 "$SOCKD_LOG_PATH" >&2
+  printf 'SOCKS 외부 인터페이스 감지가 잘못되었으면 다음처럼 다시 실행하십시오: IPROXY_EXTERNAL_IFACE=<인터페이스명> %s\n' "$0" >&2
+  stop_existing
+  exit 1
+fi
 sleep 1
 
 if [ -f "$TINYPROXY_PID_PATH" ] && [ -f "$SOCKD_PID_PATH" ]; then

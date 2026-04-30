@@ -11,6 +11,7 @@ SOCKD_PID_PATH="${IPROXY_SOCKD_PID_PATH:-/tmp/iproxy-sockd.pid}"
 TINYPROXY_LOG_PATH="${IPROXY_TINYPROXY_LOG_PATH:-/tmp/iproxy-tinyproxy.log}"
 SOCKD_LOG_PATH="${IPROXY_SOCKD_LOG_PATH:-/tmp/iproxy-sockd.log}"
 EXTERNAL_IFACE="${IPROXY_EXTERNAL_IFACE:-}"
+EXTERNAL_ADDR="${IPROXY_EXTERNAL_ADDR:-}"
 
 require_packages() {
   if command -v tinyproxy >/dev/null 2>&1 && command -v sockd >/dev/null 2>&1; then
@@ -24,6 +25,28 @@ require_packages() {
 
   apk update
   apk add tinyproxy dante-server
+}
+
+detect_address_for_iface() {
+  iface="$1"
+
+  if command -v ip >/dev/null 2>&1; then
+    found="$(ip -4 addr show dev "$iface" scope global 2>/dev/null | awk '/inet / { sub(/\/.*/, "", $2); print $2; exit }' || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  if command -v ifconfig >/dev/null 2>&1; then
+    found="$(ifconfig "$iface" 2>/dev/null | awk '/inet addr:/ { sub(/addr:/, "", $2); print $2; exit } /inet / { print $2; exit }' || true)"
+    if [ -n "$found" ] && [ "$found" != "127.0.0.1" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 detect_external_iface() {
@@ -65,6 +88,38 @@ detect_external_iface() {
   fi
 
   printf '%s\n' 'eth0'
+}
+
+detect_external_addr() {
+  if [ -n "$EXTERNAL_ADDR" ]; then
+    printf '%s\n' "$EXTERNAL_ADDR"
+    return 0
+  fi
+
+  iface="$(detect_external_iface)"
+  found="$(detect_address_for_iface "$iface" 2>/dev/null || true)"
+  if [ -n "$found" ]; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+
+  if command -v ip >/dev/null 2>&1; then
+    found="$(ip -4 addr show scope global 2>/dev/null | awk '/inet / { sub(/\/.*/, "", $2); print $2; exit }' || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  if command -v ifconfig >/dev/null 2>&1; then
+    found="$(ifconfig 2>/dev/null | awk '/^[^[:space:]]/ { sub(":", "", $1); iface = $1 } /inet addr:/ && iface != "lo" && iface != "lo0" { sub(/addr:/, "", $2); print $2; exit } /inet / && iface != "lo" && iface != "lo0" { print $2; exit }' || true)"
+    if [ -n "$found" ]; then
+      printf '%s\n' "$found"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 collect_pids() {
@@ -128,12 +183,16 @@ write_tinyproxy_config() {
 }
 
 write_sockd_config() {
-  iface="$(detect_external_iface)"
+  if ! addr="$(detect_external_addr)"; then
+    printf '%s\n' 'SOCKS 외부 IPv4 주소를 감지하지 못했습니다.' >&2
+    printf '다음처럼 주소를 직접 지정하십시오: IPROXY_EXTERNAL_ADDR=<iSH_IP주소> %s\n' "$0" >&2
+    exit 1
+  fi
   umask 077
   {
     printf 'logoutput: %s\n' "$SOCKD_LOG_PATH"
     printf 'internal: %s port = %s\n' "$BIND_ADDR" "$SOCKS_PORT"
-    printf 'external: %s\n' "$iface"
+    printf 'external: %s\n' "$addr"
     printf '%s\n' 'socksmethod: none'
     printf '%s\n' 'clientmethod: none'
     printf '%s\n' 'user.privileged: root'
@@ -181,7 +240,7 @@ if ! sockd -D -f "$SOCKD_CONFIG_PATH" -p "$SOCKD_PID_PATH"; then
   printf '%s\n' 'sockd 시작에 실패했습니다.' >&2
   sockd -V -f "$SOCKD_CONFIG_PATH" >&2 || true
   [ -f "$SOCKD_LOG_PATH" ] && tail -n 20 "$SOCKD_LOG_PATH" >&2
-  printf 'SOCKS 외부 인터페이스 감지가 잘못되었으면 다음처럼 다시 실행하십시오: IPROXY_EXTERNAL_IFACE=<인터페이스명> %s\n' "$0" >&2
+  printf 'SOCKS 외부 주소 감지가 잘못되었으면 다음처럼 다시 실행하십시오: IPROXY_EXTERNAL_ADDR=<iSH_IP주소> %s\n' "$0" >&2
   stop_existing
   exit 1
 fi
@@ -192,7 +251,7 @@ if [ -f "$TINYPROXY_PID_PATH" ] && [ -f "$SOCKD_PID_PATH" ]; then
   printf 'HTTP 포트: %s\n' "$HTTP_PORT"
   printf 'SOCKS 포트: %s\n' "$SOCKS_PORT"
   printf '바인드 주소: %s\n' "$BIND_ADDR"
-  printf 'SOCKS 외부 인터페이스: %s\n' "$(detect_external_iface)"
+  printf 'SOCKS 외부 주소: %s\n' "$(detect_external_addr)"
   print_addresses
   printf 'macOS에서 iPhone 핫스팟 또는 USB 테더링에 연결한 뒤 다음 형식으로 실행하십시오.\n'
   printf './scripts/macos/apply-iproxy.sh <iPhone 또는 iSH 주소> %s %s\n' "$SOCKS_PORT" "$HTTP_PORT"

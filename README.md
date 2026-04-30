@@ -31,6 +31,12 @@ chmod +x scripts/ish/start-iproxy.sh scripts/ish/stop-iproxy.sh
 IPROXY_HTTP_PORT=8080 IPROXY_SOCKS_PORT=1081 ./scripts/ish/start-iproxy.sh
 ```
 
+SOCKS 외부 주소 감지가 실패하면 iSH에 표시되는 IPv4 주소를 직접 지정하십시오.
+
+```sh
+IPROXY_EXTERNAL_ADDR=172.20.10.2 ./scripts/ish/start-iproxy.sh
+```
+
 ## macOS에서 프록시 적용
 
 iPhone 핫스팟 또는 USB 테더링에 macOS를 연결한 뒤 실행하십시오.

@@ -5,7 +5,13 @@ iPhone의 iSH 앱에서 HTTP/SOCKS 프록시를 실행하고, macOS에서 해당
 ## 설치
 
 ```sh
-if [ -d i2proxy ]; then cd i2proxy; else command -v git >/dev/null 2>&1 || { apk update && apk add git; }; git clone https://github.com/yldst-dev/i2proxy.git i2proxy && cd i2proxy; fi
+if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/yldst-dev/i2proxy/main/install.sh | sh; else apk update && apk add curl && curl -fsSL https://raw.githubusercontent.com/yldst-dev/i2proxy/main/install.sh | sh; fi; cd ~/i2proxy
+```
+
+이미 설치된 상태에서 최신 파일만 다시 받으려면 다음을 실행하십시오.
+
+```sh
+cd ~/i2proxy/scripts/ish && ./update-iproxy.sh
 ```
 
 ## 지원 범위
